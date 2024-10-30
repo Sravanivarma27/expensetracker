@@ -2,28 +2,30 @@ package com.example.expensetracker
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.database.Cursor
 import android.os.Bundle
+import android.util.Log
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.database.*
 
 class ViewExpensesActivity : AppCompatActivity() {
 
-    private lateinit var dbHelper: DatabaseHelper
+    private lateinit var database: DatabaseReference
     private lateinit var lvExpenses: ListView
     private lateinit var expensesList: ArrayList<String>
-    private var expenseIds: ArrayList<Int> = ArrayList()
+    private lateinit var expenseIds: ArrayList<String> // Use String for Firebase keys
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_view_expenses)
 
-        dbHelper = DatabaseHelper(this)
+        database = FirebaseDatabase.getInstance().reference.child("Expenses")
         lvExpenses = findViewById(R.id.listViewExpenses)
         expensesList = ArrayList()
+        expenseIds = ArrayList()
 
         loadExpenses()
 
@@ -35,22 +37,30 @@ class ViewExpensesActivity : AppCompatActivity() {
         }
     }
 
-    @SuppressLint("Range")
     private fun loadExpenses() {
-        val cursor: Cursor = dbHelper.getAllExpenses()
-        if (cursor.moveToFirst()) {
-            do {
-                val id = cursor.getInt(cursor.getColumnIndex(DatabaseHelper.COLUMN_ID))
-                val expenseName = cursor.getString(cursor.getColumnIndex(DatabaseHelper.COLUMN_EXPENSE_NAME))
-                expensesList.add(expenseName)
-                expenseIds.add(id)
-            } while (cursor.moveToNext())
-        } else {
-            Toast.makeText(this, "No expenses found", Toast.LENGTH_SHORT).show()
-        }
-        cursor.close()
+        database.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                expensesList.clear()
+                expenseIds.clear()
 
-        val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, expensesList)
-        lvExpenses.adapter = adapter
+                if (snapshot.exists()) {
+                    for (expenseSnapshot in snapshot.children) {
+                        val expenseName = expenseSnapshot.child("expenseName").value.toString()
+                        expensesList.add(expenseName)
+                        expenseIds.add(expenseSnapshot.key.toString()) // Use Firebase key as ID
+                    }
+                } else {
+                    Toast.makeText(this@ViewExpensesActivity, "No expenses found", Toast.LENGTH_SHORT).show()
+                }
+
+                val adapter = ArrayAdapter(this@ViewExpensesActivity, android.R.layout.simple_list_item_1, expensesList)
+                lvExpenses.adapter = adapter
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("ViewExpensesActivity", "Failed to load expenses: ${error.message}")
+                Toast.makeText(this@ViewExpensesActivity, "Error loading expenses", Toast.LENGTH_SHORT).show()
+            }
+        })
     }
 }

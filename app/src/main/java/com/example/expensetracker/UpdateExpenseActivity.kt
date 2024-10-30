@@ -1,27 +1,29 @@
 package com.example.expensetracker
 
-import android.database.Cursor
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
 
 class UpdateExpenseActivity : AppCompatActivity() {
 
-    private lateinit var dbHelper: DatabaseHelper
+    private lateinit var database: DatabaseReference
     private lateinit var etExpenseName: EditText
     private lateinit var etAmount: EditText
     private lateinit var etCategory: EditText
     private lateinit var etDate: EditText
     private lateinit var etPaymentMethod: EditText
-    private var expenseId: Int? = null
+    private var expenseId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_update_expense)
 
-        dbHelper = DatabaseHelper(this)
+        database = FirebaseDatabase.getInstance().reference.child("Expenses")
         etExpenseName = findViewById(R.id.etExpenseName)
         etAmount = findViewById(R.id.etAmount)
         etCategory = findViewById(R.id.etCategory)
@@ -31,7 +33,8 @@ class UpdateExpenseActivity : AppCompatActivity() {
         val btnDelete: Button = findViewById(R.id.btnDelete)
 
         // Get the expense ID from the Intent
-        expenseId = intent.getIntExtra("EXPENSE_ID", -1)
+        expenseId = intent.getStringExtra("EXPENSE_ID")
+        Log.d("UpdateExpenseActivity", "Expense ID received: $expenseId") // Log the received ID
         loadExpenseDetails()
 
         btnUpdate.setOnClickListener { updateExpense() }
@@ -39,18 +42,26 @@ class UpdateExpenseActivity : AppCompatActivity() {
     }
 
     private fun loadExpenseDetails() {
-        expenseId?.let {
-            val cursor: Cursor = dbHelper.getExpense(it)
-            if (cursor.moveToFirst()) {
-                etExpenseName.setText(cursor.getString(cursor.getColumnIndex(DatabaseHelper.COLUMN_EXPENSE_NAME)))
-                etAmount.setText(
-                    cursor.getDouble(cursor.getColumnIndex(DatabaseHelper.COLUMN_AMOUNT)).toString()
-                )
-                etCategory.setText(cursor.getString(cursor.getColumnIndex(DatabaseHelper.COLUMN_CATEGORY)))
-                etDate.setText(cursor.getString(cursor.getColumnIndex(DatabaseHelper.COLUMN_DATE)))
-                etPaymentMethod.setText(cursor.getString(cursor.getColumnIndex(DatabaseHelper.COLUMN_PAYMENT_METHOD)))
+        expenseId?.let { id ->
+            Log.d("UpdateExpenseActivity", "Loading expense with ID: $id")
+            database.child(id).get().addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    etExpenseName.setText(snapshot.child("expenseName").value.toString())
+                    etAmount.setText(snapshot.child("amount").value.toString())
+                    etCategory.setText(snapshot.child("category").value.toString())
+                    etDate.setText(snapshot.child("date").value.toString())
+                    etPaymentMethod.setText(snapshot.child("paymentMethod").value.toString())
+                    Log.d("UpdateExpenseActivity", "Expense loaded: ${snapshot.value}")
+                } else {
+                    Toast.makeText(this, "Expense not found", Toast.LENGTH_SHORT).show()
+                }
+            }.addOnFailureListener { exception ->
+                Log.e("UpdateExpenseActivity", "Failed to load expense: ${exception.message}")
+                Toast.makeText(this, "Error loading expense", Toast.LENGTH_SHORT).show()
             }
-            cursor.close()
+        } ?: run {
+            Toast.makeText(this, "Invalid expense ID", Toast.LENGTH_SHORT).show()
+            Log.e("UpdateExpenseActivity", "Expense ID is null or invalid")
         }
     }
 
@@ -63,33 +74,34 @@ class UpdateExpenseActivity : AppCompatActivity() {
 
         if (validateInputs(expenseName, amountString, category, date, paymentMethod)) {
             val amount = amountString.toDouble()
-            if (expenseId != null) {
-                val result = dbHelper.updateExpense(
-                    expenseId!!,
-                    expenseName,
-                    amount,
-                    category,
-                    date,
-                    paymentMethod
-                )
-                if (result > 0) {
+            val updatedExpense = mapOf(
+                "expenseName" to expenseName,
+                "amount" to amount,
+                "category" to category,
+                "date" to date,
+                "paymentMethod" to paymentMethod
+            )
+
+            expenseId?.let { id ->
+                database.child(id).updateChildren(updatedExpense).addOnSuccessListener {
                     Toast.makeText(this, "Expense updated successfully", Toast.LENGTH_SHORT).show()
                     finish()
-                } else {
+                }.addOnFailureListener { exception ->
                     Toast.makeText(this, "Failed to update expense", Toast.LENGTH_SHORT).show()
+                    Log.e("UpdateExpenseActivity", "Failed to update expense: ${exception.message}")
                 }
             }
         }
     }
 
     private fun deleteExpense() {
-        expenseId?.let {
-            val result = dbHelper.deleteExpense(it)
-            if (result > 0) {
+        expenseId?.let { id ->
+            database.child(id).removeValue().addOnSuccessListener {
                 Toast.makeText(this, "Expense deleted successfully", Toast.LENGTH_SHORT).show()
                 finish()
-            } else {
+            }.addOnFailureListener { exception ->
                 Toast.makeText(this, "Failed to delete expense", Toast.LENGTH_SHORT).show()
+                Log.e("UpdateExpenseActivity", "Failed to delete expense: ${exception.message}")
             }
         }
     }

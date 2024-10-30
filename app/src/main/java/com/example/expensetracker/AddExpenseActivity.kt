@@ -1,14 +1,18 @@
 package com.example.expensetracker
 
+import Expense
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
 
 class AddExpenseActivity : AppCompatActivity() {
 
-    private lateinit var dbHelper: DatabaseHelper
+    private lateinit var database: DatabaseReference
     private lateinit var etExpenseName: EditText
     private lateinit var etAmount: EditText
     private lateinit var etCategory: EditText
@@ -19,9 +23,11 @@ class AddExpenseActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_add_expense)
 
-        dbHelper = DatabaseHelper(this)
+        // Initialize Firebase Database
+        database = FirebaseDatabase.getInstance().reference.child("Expenses")
+
         etExpenseName = findViewById(R.id.etExpenseName)
-        etAmount = findViewById(R.id.etAmount) // Ensure this ID matches your XML
+        etAmount = findViewById(R.id.etAmount)
         etCategory = findViewById(R.id.etCategory)
         etDate = findViewById(R.id.etDate)
         etPaymentMethod = findViewById(R.id.etPaymentMethod)
@@ -39,13 +45,34 @@ class AddExpenseActivity : AppCompatActivity() {
 
         if (validateInputs(expenseName, amountString, category, date, paymentMethod)) {
             val amount = amountString.toDouble()
-            val result = dbHelper.insertExpense(expenseName, amount, category, date, paymentMethod)
-            if (result != -1L) {
-                Toast.makeText(this, "Expense added successfully", Toast.LENGTH_SHORT).show()
-                finish()
-            } else {
-                Toast.makeText(this, "Failed to add expense", Toast.LENGTH_SHORT).show()
+
+            // Create a unique ID for each expense entry
+            val expenseId = database.push().key
+            if (expenseId == null) {
+                Toast.makeText(this, "Failed to generate expense ID", Toast.LENGTH_SHORT).show()
+                Log.e("AddExpenseActivity", "Expense ID generation failed")
+                return
             }
+
+            // Create an Expense object
+            val expense = Expense(expenseId, expenseName, amount, category, date, paymentMethod)
+
+            // Log the expense object for debugging
+            Log.d("AddExpenseActivity", "Adding Expense: $expense")
+
+            // Save the expense to Firebase
+            database.child(expenseId).setValue(expense)
+                .addOnSuccessListener {
+                    Toast.makeText(this, "Expense added successfully", Toast.LENGTH_SHORT).show()
+                    Log.d("AddExpenseActivity", "Expense added successfully")
+
+                    // Finish the activity to go back to the previous screen
+                    finish()
+                }
+                .addOnFailureListener { exception ->
+                    Toast.makeText(this, "Failed to add expense", Toast.LENGTH_SHORT).show()
+                    Log.e("AddExpenseActivity", "Failed to add expense: ${exception.message}")
+                }
         }
     }
 
